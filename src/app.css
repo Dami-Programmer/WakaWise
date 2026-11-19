@@ -173,6 +173,9 @@ body.search-mode .sheet-x { display: none; }
 /* "Made by Newtz" creator badge */
 .made-by { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 5px 14px 5px 5px; border-radius: 999px;
   background: var(--ctl); border: 1px solid var(--line, rgba(127,127,127,.25)); color: var(--muted); font-size: 13px; }
+.made-by { text-decoration: none; cursor: pointer; transition: border-color .15s, background .15s; }
+.made-by:hover, .made-by:focus-visible { border-color: var(--muted); }
+.made-by:active { transform: scale(.97); }
 .made-by b { color: var(--text); font-weight: 700; }
 .made-by-mark { width: 24px; height: 24px; border-radius: 50%; display: block; background: #000; }
 

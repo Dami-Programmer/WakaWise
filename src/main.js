@@ -46,7 +46,7 @@ function restyle() {
 const BASE = import.meta.env.BASE_URL;
 const NIGERIA = [[2.6, 4.2], [14.7, 13.9]];
 // creator badge, shown on the welcome sheet and in Settings
-const MADE_BY = '<div class="made-by"><img class="made-by-mark" src="/made-by.png" alt="" width="24" height="24">Made by <b>Newtz</b></div>';
+const MADE_BY = '<a class="made-by" href="https://davey-portfolio.netlify.app/" target="_blank" rel="noopener"><img class="made-by-mark" src="/made-by.png" alt="" width="24" height="24">Made by <b>Newtz</b></a>';
 const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors · Places © <a href="https://overturemaps.org" target="_blank">Overture Maps</a>';
 
 const app = {
