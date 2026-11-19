@@ -5,7 +5,7 @@ import { Search } from './search.js';
 let search = null;
 self.onmessage = ({ data: m }) => {
   if (m.type === 'build') {
-    search = new Search(m.docs);
+    search = new Search(JSON.parse(m.json));
     self.postMessage({ type: 'ready' });
   } else if (m.type === 'add') {
     search?.addUserPlace(m.place);

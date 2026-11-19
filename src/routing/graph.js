@@ -16,11 +16,13 @@ export function loadGraph(meta, buffer) {
     edgeCount: meta.counts.edges,
   };
   for (const s of meta.sections) g[s.name] = new TYPES[s.type](buffer, s.offset, s.length);
-  // keke / okada: kept off motorways (banned, and too fast) and steered away from trunk roads
+  // keke / okada: kept off motorways (banned, and too fast) and steered away from trunk roads;
+  // in Lagos and the FCT they are banned on highways and bridges, so trunk roads are off too
+  const noTrunk = meta.slug === 'lagos' || meta.slug === 'federal-capital-territory';
   g.bikeClass = new Float32Array(meta.classes.length).fill(1);
   meta.classes.forEach((c, i) => {
     if (c === 'motorway' || c === 'motorway_link') g.bikeClass[i] = 0;
-    else if (c === 'trunk' || c === 'trunk_link') g.bikeClass[i] = 1.6;
+    else if (c === 'trunk' || c === 'trunk_link') g.bikeClass[i] = noTrunk ? 0 : 1.6;
   });
   return g;
 }

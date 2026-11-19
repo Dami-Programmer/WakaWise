@@ -7,9 +7,11 @@
 # Optional: HF_TOKEN (Hugging Face read token) to also merge Foursquare places.
 name: Refresh maps
 
+# Runs when started by hand (Actions -> Refresh maps -> Run workflow). Once the secrets are set,
+# make it weekly by adding under `on:`
+#   schedule:
+#     - cron: '0 1 * * 1' # Mondays 02:00 Nigeria time
 on:
-  schedule:
-    - cron: '0 1 * * 1' # Mondays 02:00 Nigeria time
   workflow_dispatch: {}
 
 concurrency: refresh-maps

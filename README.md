@@ -48,7 +48,7 @@ npm run cf:deploy       # build + publish the app
 node tools/offline-test.mjs   # end-to-end offline check of the live site
 ```
 
-The maps also rebuild weekly on GitHub Actions (`.github/workflows/refresh-maps.yml`) once the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets are set.
+The maps can also be rebuilt on GitHub Actions (`.github/workflows/refresh-maps.yml`) once the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` repository secrets are set.
 
 ## Credits
 

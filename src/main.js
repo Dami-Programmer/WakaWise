@@ -355,14 +355,15 @@ async function downloadState(slug) {
 async function useState(s, files, { quiet = false, downloaded = false } = {}) {
   const { build } = files;
   const text = async (f) => new TextDecoder().decode(await files.read(f));
+  const searchText = await text('search.json');
   stopNavigation();
   $('state-chip').innerHTML = `<span class="dot"></span>${esc(s.name)} · Opening…`;
   await new Promise((r) => setTimeout(r, 20)); // let the label paint before the heavy work
   const meta = JSON.parse(await text('graph.json'));
   app.graph = loadGraph(meta, await files.read('graph.bin'));
-  app.docs = JSON.parse(await text('search.json'));
+  app.docs = JSON.parse(searchText);
   app.search?.close();
-  app.search = new SearchClient(app.docs);
+  app.search = new SearchClient(searchText); // the worker parses its own copy (cheaper than copying objects)
   indexedUserPlaces.clear();
   app.snapper = new Snapper(app.graph);
   app.landmarks = new Landmarks(app.docs);
@@ -578,7 +579,8 @@ function center() {
 
 /** Search running in a Web Worker; `query` returns a Promise. Falls back to the main thread if workers fail. */
 class SearchClient {
-  constructor(docs) {
+  constructor(json) {
+    const docs = () => JSON.parse(json);
     this.pending = new Map();
     this.seq = 0;
     try {
@@ -588,12 +590,11 @@ class SearchClient {
         this.pending.get(m.id)?.(m.results);
         this.pending.delete(m.id);
       };
-      this.worker.onerror = () => this.fallback(docs);
-      this.worker.postMessage({ type: 'build', docs });
+      this.worker.onerror = () => this.fallback(docs());
+      this.worker.postMessage({ type: 'build', json });
     } catch {
-      this.fallback(docs);
+      this.fallback(docs());
     }
-    this.docs = docs;
     this.added = [];
   }
   fallback(docs) {
@@ -702,8 +703,8 @@ function showPlace(p) {
 
 // Where keke / okada are restricted (shown under keke/okada routes; check local rules)
 const BIKE_BANS = {
-  lagos: 'Okada and keke are banned on highways, bridges and in many Lagos areas (incl. Ikeja, Eti-Osa, Lagos Island, Apapa, Surulere). Check before you ride.',
-  'federal-capital-territory': 'Okada are banned in the Abuja city centre and many districts.',
+  lagos: 'Routes here also avoid highways and bridges. Okada and keke are banned on them and in many areas (incl. Ikeja, Eti-Osa, Lagos Island, Apapa, Surulere). Check before you ride.',
+  'federal-capital-territory': 'Routes here also avoid highways. Okada are banned in the Abuja city centre and many districts.',
 };
 
 /** A WakaWise link that opens this exact spot: /?at=lat,lon&n=name */
@@ -1028,7 +1029,7 @@ function showSettings() {
     <h3>Voice directions</h3>
     <div class="row">${opt('voice', 'on', 'On', !muted)}${opt('voice', 'off', 'Off', muted)}</div>
     <h3>Help improve travel times</h3>
-    <p class="sub">When you drive with WakaWise, send how long each road took, so times can be based on real traffic. The first and last 500 m of every trip are left out, and no name, phone number or trip history is sent.</p>
+    <p class="sub">When you drive with WakaWise navigation, send how long each road took, so travel times can be based on real traffic. The start and end of each trip (500 m) are left out, and only totals per road are kept: no name, phone number or account.</p>
     <div class="row">${opt('trips', 'on', 'On', tripsAllowed())}${opt('trips', 'off', 'Off', !tripsAllowed())}</div>
     ${saved.home || saved.work ? `<h3>Saved places</h3><ul class="list">${sv('home', 'Home')}${sv('work', 'Work')}</ul>` : ''}
     <h3>Maps on this device</h3>
