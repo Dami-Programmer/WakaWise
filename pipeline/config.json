@@ -1,0 +1,120 @@
+{
+  "states": {
+    "country": "Nigeria",
+    "isoPrefix": "NG-",
+    "adminLevel": "4",
+    "expectedCount": 37,
+    "bufferDeg": 0.05,
+    "maxRepairGapDeg": 0.3,
+    "clientSimplifyDeg": 0.005
+  },
+  "tiles": {
+    "buildsIndex": "https://build-metadata.protomaps.dev/builds.json",
+    "buildUrl": "https://build.protomaps.com/{key}",
+    "build": "latest",
+    "maxzoom": 15,
+    "maxTilesMB": 60
+  },
+  "osm": {
+    "geofabrik": "https://download.geofabrik.de/africa/nigeria-latest.osm.pbf"
+  },
+  "checks": {
+    "lagos": {
+      "routes": [
+        {
+          "name": "Ikeja (Allen Ave) to Lagos Island (CMS)",
+          "from": [
+            6.6022,
+            3.3519
+          ],
+          "to": [
+            6.4541,
+            3.3894
+          ]
+        },
+        {
+          "name": "Yaba (Unilag) to Lekki Phase 1",
+          "from": [
+            6.5158,
+            3.3854
+          ],
+          "to": [
+            6.4474,
+            3.4723
+          ]
+        }
+      ],
+      "searches": [
+        "Allen Avenue",
+        "Yaba",
+        "Third Mainland Bridge",
+        "Lekki",
+        "Ikeja City Mall"
+      ]
+    },
+    "federal-capital-territory": {
+      "routes": [
+        {
+          "name": "Wuse Market to Nnamdi Azikiwe Airport",
+          "from": [
+            9.064,
+            7.471
+          ],
+          "to": [
+            9.0068,
+            7.2632
+          ]
+        }
+      ],
+      "searches": [
+        "Wuse",
+        "Garki",
+        "Jabi Lake Mall"
+      ]
+    },
+    "kano": {
+      "routes": [
+        {
+          "name": "Kano city centre to Mallam Aminu Kano Airport",
+          "from": [
+            11.9964,
+            8.5167
+          ],
+          "to": [
+            12.0476,
+            8.5246
+          ]
+        }
+      ],
+      "searches": [
+        "Sabon Gari",
+        "Kurmi Market"
+      ]
+    },
+    "rivers": {
+      "routes": [
+        {
+          "name": "Port Harcourt (Garrison) to Rumuokoro",
+          "from": [
+            4.7965,
+            7.0181
+          ],
+          "to": [
+            4.8687,
+            6.9963
+          ]
+        }
+      ],
+      "searches": [
+        "Rumuola",
+        "Trans Amadi"
+      ]
+    }
+  },
+  "places": {
+    "stacCatalog": "https://stac.overturemaps.org/catalog.json",
+    "release": "latest",
+    "minConfidence": 0.5,
+    "dedupeMeters": 120
+  }
+}

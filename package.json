@@ -1,0 +1,31 @@
+{
+  "name": "offline-map",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "data:tiles": "py pipeline/fetch_tiles.py",
+    "data:osm": "py pipeline/fetch_osm.py geofabrik",
+    "data:build": "py pipeline/build_osm.py",
+    "data:check": "node pipeline/check.mjs",
+    "phone": "vite build && vite preview --mode lan --strictPort",
+    "phone:dev": "vite --mode lan --strictPort",
+    "build": "vite build",
+    "preview": "vite preview",
+    "phone:cert": "node tools/lan-cert.mjs",
+    "cf:dev": "vite build && wrangler pages dev --port 8788",
+    "cf:upload": "node pipeline/upload.mjs",
+    "cf:deploy": "vite build && wrangler pages deploy --branch main"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
+    "minisearch": "^7.2.0",
+    "playwright-core": "^1.65.1",
+    "vite": "^8.3.8",
+    "wrangler": "^4.165.0"
+  },
+  "dependencies": {
+    "@protomaps/basemaps": "^5.7.2",
+    "maplibre-gl": "^6.19.0",
+    "pmtiles": "^4.5.0"
+  }
+}

@@ -1,0 +1,25 @@
+# dependencies and build output
+node_modules/
+/dist/
+.wrangler/
+__pycache__/
+
+# map data: raw downloads and the built state packages (1.4 GB; they live in Cloudflare R2)
+/data/
+
+# tools: keep our scripts, not downloads, generated files or secrets
+# local HTTPS certificate authority: contains a PRIVATE KEY, never commit
+tools/certs/
+# pmtiles.exe, downloaded from github.com/protomaps/go-pmtiles
+tools/pmtiles/
+# source of public/fonts and public/sprites
+tools/basemaps-assets/
+# screenshots made by tools/screenshots.mjs
+tools/shots/
+
+# local settings and secrets
+.env
+.env.*
+.dev.vars
+.claude/settings.local.json
+*.log

@@ -1,0 +1,9 @@
+# Cloudflare Pages project: the built app (dist/) plus the Pages Function in functions/ that
+# serves the state packages from the R2 bucket below. See "Hosting" in CLAUDE.md.
+name = "wakawise"
+pages_build_output_dir = "dist"
+compatibility_date = "2026-11-01"
+
+[[r2_buckets]]
+binding = "DATA"
+bucket_name = "offline-map-data"

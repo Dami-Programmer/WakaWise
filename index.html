@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1012" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="WakaWise" />
+    <meta name="description" content="Find your way, even when the internet goes dark. Maps, search, directions and voice navigation for Nigeria that work with no data." />
+    <!-- link previews. WhatsApp/Telegram/Facebook use the square og:image (compact card, like
+         "Name — tagline" + small picture); X uses the wide twitter:image. Images: py tools/make_share_image.py -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WakaWise" />
+    <meta property="og:title" content="WakaWise — Find your way, even when the internet goes dark" />
+    <meta property="og:description" content="Maps, search and turn-by-turn directions for Nigeria. Download your state once, then use it with no data." />
+    <meta property="og:url" content="https://wakawise.pages.dev/" />
+    <meta property="og:image" content="https://wakawise.pages.dev/og-square.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="600" />
+    <meta property="og:image:height" content="600" />
+    <meta property="og:image:alt" content="WakaWise: Find your way, even when the internet goes dark." />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="WakaWise — Find your way, even when the internet goes dark" />
+    <meta name="twitter:description" content="Maps, search and turn-by-turn directions for Nigeria. Download your state once, then use it with no data." />
+    <meta name="twitter:image" content="https://wakawise.pages.dev/og-image.jpg" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="/icons/favicon.png" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>WakaWise</title>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <button id="state-chip" class="chip" type="button">Choose state</button>
+
+    <div class="ctl-top">
+      <button id="settings" class="ctl" type="button" aria-label="Settings">
+        <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+      <button id="north" class="ctl" type="button" aria-label="Face north" hidden>
+        <svg class="i" viewBox="0 0 24 24"><path d="M12 3 7.5 13h9z" fill="#ef5350" stroke="#ef5350"/><path d="M12 21l4.5-8h-9z"/></svg>
+      </button>
+    </div>
+
+    <div class="ctl-mid">
+      <button id="zoom-in" class="ctl zoom" type="button" aria-label="Zoom in"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/></svg></button>
+      <button id="zoom-out" class="ctl zoom" type="button" aria-label="Zoom out"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M8 12h8"/></svg></button>
+      <div class="gap zoom"></div>
+      <button id="locate" class="ctl" type="button" aria-label="Show my location"><svg class="i" viewBox="0 0 24 24"></svg></button>
+    </div>
+
+    <form id="search-form" class="searchbar" autocomplete="off">
+      <button id="search-back" class="lead" type="button" aria-label="Back">
+        <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </button>
+      <input id="search" type="search" placeholder="Where to?" aria-label="Search places, streets, plus codes" enterkeyhint="search" />
+      <button id="clear" type="button" class="icon-btn" hidden aria-label="Clear"><svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <button id="search-go" type="submit" class="icon-btn" aria-label="Search"><svg class="i" viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </form>
+
+    <section id="sheet" class="sheet" hidden>
+      <div class="grabber"></div>
+      <button class="sheet-x" type="button" data-act="close" aria-label="Close"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      <div id="sheet-body"></div>
+    </section>
+
+    <div id="toast" class="toast" hidden></div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
