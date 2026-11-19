@@ -48,6 +48,8 @@ function restyle() {
 const BASE = import.meta.env.BASE_URL;
 const NIGERIA = [[2.6, 4.2], [14.7, 13.9]];
 const indexedUserPlaces = new Set(); // user-added places already in the search index
+// first-visit welcome text: keep it the same as the copy in index.html
+const WELCOME = `<h2>Welcome to WakaWise</h2><p class="sub welcome-sub">Maps, search, directions and voice navigation for Nigeria that keep working with no data. Allow location so we can get the map for the state you're in, or choose your state yourself.</p><div class="row"><button class="btn" data-act="pick">Choose state instead</button></div>`;
 // creator badge, shown on the welcome sheet and in Settings
 const MADE_BY = '<a class="made-by" href="https://davey-portfolio.netlify.app/" target="_blank" rel="noopener"><img class="made-by-mark" src="/made-by.png" alt="" width="24" height="24">Made by <b>Newtz</b></a>';
 const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors · Places © <a href="https://overturemaps.org" target="_blank">Overture Maps</a>';
@@ -173,6 +175,8 @@ addEventListener('beforeinstallprompt', (e) => {
   installPrompt = e;
 });
 
+let statesLoaded;
+const statesReady = new Promise((r) => (statesLoaded = r));
 async function init() {
   const [states, packs] = await Promise.all([loadStates(), listPacks()]);
   app.states = states;
@@ -181,6 +185,7 @@ async function init() {
     s.saved = !!p?.active;
     s.info ??= p?.active?.info ?? p?.pending?.info; // offline: index.json may be unavailable
   }
+  statesLoaded();
   const bySlug = (slug) => app.states.find((s) => s.slug === slug);
   const param = bySlug(new URLSearchParams(location.search).get('state'));
   const remembered = bySlug(safeGet('lastState'));
@@ -215,7 +220,9 @@ async function init() {
   }
 
   // First visit: the visitor's position decides which state's map they need.
-  openSheet(`<h2>Welcome to WakaWise</h2><p class="sub">Maps, search and directions that work with no data. Allow location so we can get the map for the state you're in.</p><div class="row"><button class="btn" data-act="pick">Choose state instead</button></div>${MADE_BY}`);
+  // index.html already shows this welcome on a first visit; keep that one (repainting it would delay the page's first-screen timing)
+  if (!$('welcome') || sheet.hidden) openSheet(`<div id="welcome">${WELCOME}${MADE_BY}</div>`);
+  else document.body.style.setProperty('--sheet-h', `${sheet.offsetHeight}px`);
   const pos = await getPosition(10000);
   const here = pos.error ? null : stateAt(app.states, pos.lon, pos.lat);
   if (!pos.error) setMe(pos);
@@ -269,6 +276,7 @@ async function offerState(s, detected) {
 }
 
 async function openStatePicker(title = 'Choose a state', note = '') {
+  await statesReady; // the welcome's button can be tapped before the list of states has loaded
   const here = app.me ? stateAt(app.states, app.me.lon, app.me.lat) : null;
   const ordered = [...app.states].sort((a, b) => (b === here) - (a === here) || b.saved - a.saved);
   const lines = await Promise.all(ordered.map(sizeLine));

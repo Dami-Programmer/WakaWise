@@ -62,8 +62,20 @@
     <section id="sheet" class="sheet" hidden>
       <div class="grabber"></div>
       <button class="sheet-x" type="button" data-act="close" aria-label="Close"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-      <div id="sheet-body"></div>
+      <div id="sheet-body"><div id="welcome"><h2>Welcome to WakaWise</h2><p class="sub welcome-sub">Maps, search, directions and voice navigation for Nigeria that keep working with no data. Allow location so we can get the map for the state you're in, or choose your state yourself.</p><div class="row"><button class="btn" data-act="pick">Choose state instead</button></div><a class="made-by" href="https://davey-portfolio.netlify.app/" target="_blank" rel="noopener"><img class="made-by-mark" src="/made-by.png" alt="" width="24" height="24">Made by <b>Newtz</b></a></div></div>
     </section>
+    <script>
+      // First visit: show the welcome at once, before the app's code has loaded (faster first screen).
+      // Returning visitors (a state already opened) skip it; main.js replaces it either way.
+      try {
+        if (!localStorage.getItem('lastState')) {
+          document.getElementById('sheet').hidden = false;
+          document.body.classList.add('sheet-open');
+        } else document.getElementById('welcome').remove();
+      } catch (e) {
+        document.getElementById('welcome').remove();
+      }
+    </script>
 
     <div id="toast" class="toast" hidden></div>
     <script type="module" src="/src/main.js"></script>
