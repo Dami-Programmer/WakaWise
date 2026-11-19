@@ -45,6 +45,8 @@ function restyle() {
 }
 const BASE = import.meta.env.BASE_URL;
 const NIGERIA = [[2.6, 4.2], [14.7, 13.9]];
+// creator badge, shown on the welcome sheet and in Settings
+const MADE_BY = '<div class="made-by"><img class="made-by-mark" src="/made-by.png" alt="" width="24" height="24">Made by <b>Newtz</b></div>';
 const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors · Places © <a href="https://overturemaps.org" target="_blank">Overture Maps</a>';
 
 const app = {
@@ -193,7 +195,7 @@ async function init() {
   }
 
   // First visit: the visitor's position decides which state's map they need.
-  openSheet(`<h2>Welcome to WakaWise</h2><p class="sub">Maps, search and directions that work with no data. Allow location so we can get the map for the state you're in.</p><div class="row"><button class="btn" data-act="pick">Choose state instead</button></div>`);
+  openSheet(`<h2>Welcome to WakaWise</h2><p class="sub">Maps, search and directions that work with no data. Allow location so we can get the map for the state you're in.</p><div class="row"><button class="btn" data-act="pick">Choose state instead</button></div>${MADE_BY}`);
   const pos = await getPosition(10000);
   const here = pos.error ? null : stateAt(app.states, pos.lon, pos.lat);
   if (!pos.error) setMe(pos);
@@ -873,7 +875,8 @@ function showSettings() {
     ${saved.home || saved.work ? `<h3>Saved places</h3><ul class="list">${sv('home', 'Home')}${sv('work', 'Work')}</ul>` : ''}
     <h3>Maps on this device</h3>
     <div class="row"><button class="btn" data-act="pick">Manage state maps</button>${app.state ? '<button class="btn" data-act="clear-recent">Clear recent places</button>' : ''}</div>
-    <p class="note"><b>WakaWise</b>: maps that work with no data.<br>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL). Places © <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>. Map style © Protomaps. Font: Noto Sans (OFL).</p>`);
+    <p class="note"><b>WakaWise</b>: maps that work with no data.<br>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL). Places © <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>. Map style © Protomaps. Font: Noto Sans (OFL).</p>
+    ${MADE_BY}`);
 }
 
 /* ------------------------------------------------------------------ directions */

@@ -170,6 +170,11 @@ body.search-mode .sheet-x { display: none; }
 .steps .d { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .note { font-size: 12px; color: var(--muted); margin-top: 10px; line-height: 1.45; }
 .note a { color: var(--muted); }
+/* "Made by Newtz" creator badge */
+.made-by { display: inline-flex; align-items: center; gap: 8px; margin-top: 14px; padding: 5px 14px 5px 5px; border-radius: 999px;
+  background: var(--ctl); border: 1px solid var(--line, rgba(127,127,127,.25)); color: var(--muted); font-size: 13px; }
+.made-by b { color: var(--text); font-weight: 700; }
+.made-by-mark { width: 24px; height: 24px; border-radius: 50%; display: block; background: #000; }
 
 /* forms */
 label.field { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
