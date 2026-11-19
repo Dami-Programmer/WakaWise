@@ -335,13 +335,13 @@ export class Navigator {
     const tr = this.track;
     const [x, y] = tr.toXY(f.lat, f.lon);
     const p = tr.project(x, y, this.hint);
-    const limit = (this.dir.mode === 'foot' ? 25 : 40) + Math.min(f.accuracy || 0, 40) / 2;
+    const limit = (this.dir.mode === 'foot' ? 25 : 35) + Math.min(f.accuracy || 0, 40) / 2;
     this.offCount = p.d > limit ? this.offCount + 1 : 0;
     this.lastFix = f;
 
     if (this.offCount >= 3 && (!this.lastReroute || f.t - this.lastReroute > 5000)) {
       this.lastReroute = f.t;
-      const next = this.reroute(f.lat, f.lon);
+      const next = this.reroute(f.lat, f.lon, this.travelHeading(f));
       if (next) {
         this.setRoute(next.result, next.steps);
         this.say('Rerouting');
@@ -402,6 +402,18 @@ export class Navigator {
       this.say(`You have arrived at ${this.dir.to.n}`);
       this.exit('arrived');
     }
+  }
+
+  /** Which way we're moving (degrees), from the GPS or from the last fixes; null if unknown. */
+  travelHeading(f) {
+    if (f.heading != null && !Number.isNaN(f.heading) && f.speed > 1) return f.heading;
+    const p = this.prevFix;
+    if (p) {
+      const dx = (f.lon - p.lon) * this.track.kx;
+      const dy = (f.lat - p.lat) * M_PER_DEG;
+      if (Math.hypot(dx, dy) > 4) return (Math.atan2(dx, dy) / RAD + 360) % 360;
+    }
+    return this.dir.mode === 'foot' ? null : this.pos?.bearing ?? null;
   }
 
   /* ---------- voice */

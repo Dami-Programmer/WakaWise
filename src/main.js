@@ -10,7 +10,7 @@ import { encode } from './lib/pluscode.js';
 import { travelRange, formatRange, formatDistance, formatDuration } from './lib/traffic.js';
 import { loadUserPlaces, saveUserPlace } from './lib/userPlaces.js';
 import { loadGraph } from './routing/graph.js';
-import { route as findRoute, alternatives } from './routing/astar.js';
+import { route as findRoute, alternatives, routeCoords } from './routing/astar.js';
 import { Snapper } from './routing/snap.js';
 import { send, flush as flushOutbox } from './lib/outbox.js';
 import { tripsAllowed, bucket as tripBucket } from './lib/trips.js';
@@ -1256,6 +1256,7 @@ function startNavigation({ simulate = false } = {}) {
   if (!d?.result) return;
   if (!simulate && !navigator.geolocation) return toast('This device has no GPS');
   compass.enable(); // asks for compass access on iPhone; must happen inside the tap
+  setTimeout(() => app.snapper.edgeCells(), 1500); // ready the road lookup for rerouting (~0.1-0.5 s, once per state)
   stopNavigation();
   closeSheet();
   clearPlace();
@@ -1271,10 +1272,29 @@ function startNavigation({ simulate = false } = {}) {
     recordTrips: !simulate && d.mode === 'car' && tripsAllowed(),
     onTrip: (edges) => send('/api/trips', { slug: app.state.slug, build: app.build, bucket: tripBucket(), edges: edges.slice(0, 1500) }),
     dir: d,
-    reroute(lat, lon) {
-      const a = app.snapper.nearest(lat, lon, d.mode);
+    reroute(lat, lon, heading) {
+      // start from the road we're on, heading the way we're going (not the nearest junction, which
+      // is often the one we just turned off at and would send us back to the old route)
+      const g = app.graph;
       const b = d.snap[1];
-      const result = a >= 0 ? findRoute(app.graph, a, b, d.mode) : null;
+      const hit = app.snapper.nearestEdge(lat, lon, d.mode, heading);
+      let result = null;
+      let a;
+      if (hit) {
+        const rest = hit.node === b ? { seconds: 0, meters: 0, entries: [] } : findRoute(g, hit.node, b, d.mode);
+        if (rest) {
+          const e = hit.entry >>> 1;
+          const entries = [hit.entry, ...rest.entries];
+          const kmh = d.mode === 'foot' ? 5 : d.mode === 'bike' ? Math.min(g.edgeSpeed[e], 35) : g.edgeSpeed[e];
+          const edgeS = g.edgeLen[e] / (kmh / 3.6);
+          a = hit.start;
+          result = { mode: d.mode, seconds: rest.seconds + edgeS, meters: rest.meters + g.edgeLen[e], entries, coords: routeCoords(g, a, entries) };
+        }
+      }
+      if (!result) {
+        a = app.snapper.nearest(lat, lon, d.mode);
+        result = a >= 0 ? findRoute(g, a, b, d.mode) : null;
+      }
       if (!result) return null;
       d.snap = [a, b];
       d.from = { lat, lon, n: 'Your location' };
