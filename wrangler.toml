@@ -7,3 +7,9 @@ compatibility_date = "2026-11-01"
 [[r2_buckets]]
 binding = "DATA"
 bucket_name = "offline-map-data"
+
+# feedback: problem reports, shared places, opt-in trip times (schema in db/schema.sql)
+[[d1_databases]]
+binding = "DB"
+database_name = "wakawise"
+database_id = "0d7bb014-eed6-4574-b94d-34965fac25d9"

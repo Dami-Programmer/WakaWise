@@ -3,6 +3,14 @@
 import { canUse, entryTarget } from './graph.js';
 
 const WALK_MS = 1.4; // walking speed, metres per second
+const BIKE_KMH = 35; // keke / okada top speed
+
+/** Metres per second along edge `e`, and an extra cost factor (keke/okada avoid trunk roads). */
+function speedOf(g, e, mode) {
+  if (mode === 'foot') return WALK_MS;
+  if (mode === 'bike') return Math.min(g.edgeSpeed[e], BIKE_KMH) / 3.6;
+  return g.edgeSpeed[e] / 3.6;
+}
 const R = 6371008.8;
 const RAD = Math.PI / 180;
 
@@ -70,7 +78,7 @@ export function route(g, from, to, mode = 'car', penalty = null) {
   const cost = new Float64Array(N).fill(Infinity);
   const via = new Int32Array(N).fill(-1);
   const done = new Uint8Array(N);
-  const topSpeed = mode === 'foot' ? WALK_MS : g.meta.maxCarSpeedKmh / 3.6;
+  const topSpeed = mode === 'foot' ? WALK_MS : mode === 'bike' ? Math.min(g.meta.maxCarSpeedKmh, BIKE_KMH) / 3.6 : g.meta.maxCarSpeedKmh / 3.6;
   const tLat = g.nodeLat[to] / s;
   const tLon = g.nodeLon[to] / s;
   const h = (n) => distance(g.nodeLat[n] / s, g.nodeLon[n] / s, tLat, tLon) / topSpeed;
@@ -91,8 +99,8 @@ export function route(g, from, to, mode = 'car', penalty = null) {
       const e = entry >>> 1;
       const v = entryTarget(g, entry);
       if (done[v]) continue;
-      const speed = mode === 'foot' ? WALK_MS : g.edgeSpeed[e] / 3.6;
-      const c = cost[u] + (g.edgeLen[e] / speed) * (penalty ? penalty[e] : 1);
+      const avoid = mode === 'bike' ? g.bikeClass[g.edgeClass[e]] : 1;
+      const c = cost[u] + (g.edgeLen[e] / speedOf(g, e, mode)) * avoid * (penalty ? penalty[e] : 1);
       if (c < cost[v]) {
         cost[v] = c;
         via[v] = entry;
@@ -115,7 +123,7 @@ export function route(g, from, to, mode = 'car', penalty = null) {
   for (const entry of entries) {
     const e = entry >>> 1;
     meters += g.edgeLen[e];
-    seconds += g.edgeLen[e] / (mode === 'foot' ? WALK_MS : g.edgeSpeed[e] / 3.6);
+    seconds += g.edgeLen[e] / speedOf(g, e, mode);
   }
   return { mode, seconds, meters, entries, coords: routeCoords(g, from, entries), visited };
 }

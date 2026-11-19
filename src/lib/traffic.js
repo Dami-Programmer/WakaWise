@@ -27,7 +27,12 @@ const LABEL = { peak: 'rush hour', day: 'daytime traffic', night: 'light traffic
 export function travelRange(seconds, mode, slug, date = new Date()) {
   if (mode === 'foot') return { min: seconds, max: seconds * 1.15, label: 'walking' };
   const p = period(date);
-  const [lo, hi] = (PROFILES[slug] ?? PROFILES.default)[p];
+  let [lo, hi] = (PROFILES[slug] ?? PROFILES.default)[p];
+  if (mode === 'bike') {
+    // keke and okada squeeze through traffic, so jams slow them less
+    lo = 1 + (lo - 1) * 0.5;
+    hi = 1 + (hi - 1) * 0.6;
+  }
   return { min: seconds * lo, max: seconds * hi, label: LABEL[p] };
 }
 

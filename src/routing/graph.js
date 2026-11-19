@@ -16,13 +16,20 @@ export function loadGraph(meta, buffer) {
     edgeCount: meta.counts.edges,
   };
   for (const s of meta.sections) g[s.name] = new TYPES[s.type](buffer, s.offset, s.length);
+  // keke / okada: kept off motorways (banned, and too fast) and steered away from trunk roads
+  g.bikeClass = new Float32Array(meta.classes.length).fill(1);
+  meta.classes.forEach((c, i) => {
+    if (c === 'motorway' || c === 'motorway_link') g.bikeClass[i] = 0;
+    else if (c === 'trunk' || c === 'trunk_link') g.bikeClass[i] = 1.6;
+  });
   return g;
 }
 
-/** Can `mode` ('car' | 'foot') travel along adjacency entry (edgeId << 1 | reversed)? */
+/** Can `mode` ('car' | 'bike' | 'foot') travel along adjacency entry (edgeId << 1 | reversed)? */
 export function canUse(g, entry, mode) {
   const f = g.edgeFlags[entry >>> 1];
   if (mode === 'foot') return (f & FLAG.FOOT) !== 0;
+  if (mode === 'bike' && !g.bikeClass[g.edgeClass[entry >>> 1]]) return false;
   return (f & (entry & 1 ? FLAG.CAR_BWD : FLAG.CAR_FWD)) !== 0;
 }
 

@@ -33,13 +33,22 @@ STATES_DIR = ROOT / "data" / "states"
 SCALE = 1_000_000
 
 # ---------------------------------------------------------------- routing rules
-# Typical driving speeds (km/h) per road class. Deliberately low: Lagos traffic, no live data.
+# Typical driving speeds (km/h) per road class in towns and cities. Deliberately low: Lagos
+# traffic, no live data. Out of town (see URBAN_RADIUS_KM) the faster RURAL_SPEED table is used.
 CAR_SPEED = {
     "motorway": 80, "motorway_link": 50, "trunk": 60, "trunk_link": 40,
     "primary": 45, "primary_link": 35, "secondary": 40, "secondary_link": 30,
     "tertiary": 35, "tertiary_link": 25, "unclassified": 25, "residential": 20,
     "living_street": 10, "service": 15, "road": 20,
 }
+RURAL_SPEED = {
+    "motorway": 100, "motorway_link": 60, "trunk": 85, "trunk_link": 50,
+    "primary": 75, "primary_link": 45, "secondary": 60, "secondary_link": 40,
+    "tertiary": 50, "tertiary_link": 35, "unclassified": 40, "residential": 30,
+    "living_street": 10, "service": 20, "road": 35,
+}
+# A road counts as "in town" within this distance of a place node of that kind.
+URBAN_RADIUS_KM = {"city": 12, "town": 5, "suburb": 2.5, "quarter": 1.5, "neighbourhood": 1.2}
 FOOT_TYPES = (set(CAR_SPEED) - {"motorway", "motorway_link"}) | {
     "footway", "pedestrian", "path", "steps", "cycleway", "track", "bridleway", "corridor",
 }
@@ -143,7 +152,7 @@ class Collector:
         self.road_ids = array("q")
         self.road_lat = array("i")
         self.road_lon = array("i")
-        self.roads = []  # (flags, speed, class, name_idx, offset, count)
+        self.roads = []  # (flags, speed, class, name_idx, offset, count, maxspeed)
         self.names = {}
         self.max_speed = 0
         # search
@@ -179,12 +188,11 @@ class Collector:
             else:
                 flags |= F_CAR_FWD | F_CAR_BWD
         speed = CAR_SPEED.get(hw, 0)
-        ms = parse_maxspeed(tags.get("maxspeed"))
-        if car and ms:
+        ms = parse_maxspeed(tags.get("maxspeed")) if car else None
+        if ms:
             speed = max(5, min(speed, int(ms)))
-        self.max_speed = max(self.max_speed, speed)
         name = tags.get("name") or tags.get("ref")
-        self.roads.append((flags, speed, CLASS_INDEX[hw], self.name_idx(name), len(self.road_ids), len(pts)))
+        self.roads.append((flags, speed, CLASS_INDEX[hw], self.name_idx(name), len(self.road_ids), len(pts), int(ms) if ms else 0))
         for nid, lat, lon in pts:
             self.road_ids.append(nid)
             self.road_lat.append(round(lat * SCALE))
@@ -314,8 +322,47 @@ def build_graph(c: Collector, out_dir: Path, info: dict) -> dict:
             n_lon.append(lons[i])
         return n
 
+    # Out-of-town roads get faster speeds: find built-up areas from city/town/suburb place nodes.
+    cell = 0.05
+    towns = defaultdict(list)
+    for f in c.features:
+        r = URBAN_RADIUS_KM.get(f["place"])
+        if r:
+            towns[(int(f["lat"] // cell), int(f["lon"] // cell))].append((f["lat"], f["lon"], r))
+    reach = int(max(URBAN_RADIUS_KM.values()) / 111 / cell) + 1
+
+    town_memo = {}
+
+    def in_town(lat, lon):
+        key = (round(lat * 200), round(lon * 200))  # ~500 m cells: plenty for this
+        hit = town_memo.get(key)
+        if hit is None:
+            hit = town_memo[key] = in_town_exact(lat, lon)
+        return hit
+
+    def in_town_exact(lat, lon):
+        cy, cx = int(lat // cell), int(lon // cell)
+        for dy in range(-reach, reach + 1):
+            for dx in range(-reach, reach + 1):
+                for tlat, tlon, r in towns.get((cy + dy, cx + dx), ()):
+                    if haversine(lat, lon, tlat, tlon) <= r * 1000:
+                        return True
+        return False
+
+    def edge_speed(attrs, a, b):
+        """Town speed, or the faster out-of-town speed, judged at the middle of this edge."""
+        flags, speed, cls, _, _, _, ms = attrs
+        if not flags & (F_CAR_FWD | F_CAR_BWD):
+            return speed
+        mid = (a + b) // 2
+        if in_town(lats[mid] / SCALE, lons[mid] / SCALE):
+            return speed
+        fast = RURAL_SPEED.get(CLASSES[cls], speed)
+        return max(5, min(fast, ms)) if ms else fast
+
     def emit(a, b, attrs):
-        flags, speed, cls, name, _, _ = attrs
+        speed = edge_speed(attrs, a, b)
+        flags, _, cls, name = attrs[:4]
         length = 0.0
         for i in range(a, b):
             length += haversine(lats[i] / SCALE, lons[i] / SCALE, lats[i + 1] / SCALE, lons[i + 1] / SCALE)
@@ -396,7 +443,7 @@ def build_graph(c: Collector, out_dir: Path, info: dict) -> dict:
         names[i] = k
     meta = {
         "version": 1, "state": info["name"], "slug": info["slug"], "bbox": info["bbox"], "built": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "coordScale": SCALE, "maxCarSpeedKmh": c.max_speed,
+        "coordScale": SCALE, "maxCarSpeedKmh": max(e_speed, default=0),
         "counts": {"nodes": n, "edges": m, "shapePoints": len(s_lat), "mainNodes": sizes.get(main, 0)},
         "flags": {"CAR_FWD": F_CAR_FWD, "CAR_BWD": F_CAR_BWD, "FOOT": F_FOOT, "ROUNDABOUT": F_ROUNDABOUT, "NODE_MAIN": NODE_MAIN},
         "classes": CLASSES, "sections": sections, "names": names,

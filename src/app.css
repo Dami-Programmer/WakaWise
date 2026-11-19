@@ -181,10 +181,14 @@ body.search-mode .sheet-x { display: none; }
 
 /* forms */
 label.field { display: block; font-size: 13px; color: var(--muted); margin: 10px 0 4px; }
-.field input, .field select {
+.field input, .field select, .field textarea {
   width: 100%; font: inherit; font-size: 15px; padding: 11px 12px; border-radius: 12px; border: 1px solid var(--line);
   background: var(--surface-2); color: var(--text);
 }
+.field textarea { resize: vertical; min-height: 70px; }
+label.check { display: flex; gap: 10px; align-items: flex-start; font-size: 14px; color: var(--text); margin: 14px 0 4px; line-height: 1.35; }
+label.check input { width: 18px; height: 18px; margin: 1px 0 0; accent-color: var(--accent-strong); flex: none; }
+.mode-row { flex-wrap: wrap; }
 .progress { height: 6px; background: var(--surface-2); border-radius: 3px; overflow: hidden; margin: 12px 0; }
 .progress > div { height: 100%; width: 0; background: linear-gradient(90deg, #d7e83a, var(--accent-strong)); transition: width .2s; }
 

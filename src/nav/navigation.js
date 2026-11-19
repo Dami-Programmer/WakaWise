@@ -2,6 +2,7 @@
 // that glides along the route with the map turning to face the direction of travel, speed,
 // arrival time, voice prompts and automatic rerouting. Works fully offline (GPS needs no data).
 
+import { TripRecorder } from '../lib/trips.js';
 import { formatDistance, formatDuration, travelRange } from '../lib/traffic.js';
 
 const M_PER_DEG = 111320;
@@ -212,6 +213,7 @@ export class Navigator {
    * @param opts.reroute (lat, lon) => {result, steps} | null
    * @param opts.onExit (reason) => void   reason: 'user' | 'arrived' | 'gps-error'
    * @param opts.simulate  use a simulated drive instead of GPS
+   * @param opts.recordTrips  time each road piece (opt-in), passed to opts.onTrip([[edge, seconds]]) at the end
    */
   constructor(opts) {
     Object.assign(this, opts);
@@ -227,6 +229,9 @@ export class Navigator {
     this.dir.result = result;
     this.dir.steps = steps;
     this.track = new Track(this.graph, result, steps);
+    // opt-in travel times: keep what the previous route recorded, then time the new one
+    if (this.recorder) (this.tripSamples ??= []).push(...this.recorder.samples);
+    this.recorder = this.recordTrips ? new TripRecorder(this.graph, result, this.track) : null;
     this.secPerM = result.meters ? result.seconds / result.meters : 0.1;
     this.hint = 0;
     this.stepIdx = 1;
@@ -305,6 +310,8 @@ export class Navigator {
     this.wakeLock?.release().catch(() => {});
     if (reason !== 'arrived' && 'speechSynthesis' in window) speechSynthesis.cancel();
     map.easeTo({ pitch: 0, bearing: 0, padding: { top: 0, bottom: 0, left: 0, right: 0 }, duration: 600 });
+    const trip = [...(this.tripSamples ?? []), ...(this.recorder?.samples ?? [])];
+    if (trip.length) this.onTrip?.(trip);
     this.onExit?.(reason, err, this.pos);
   }
 
@@ -347,6 +354,7 @@ export class Navigator {
     if (onRoute) {
       this.hint = p.i;
       this.proj = p;
+      this.recorder?.update(p.along, f.t || Date.now());
     }
     const lat = onRoute ? p.lat : f.lat;
     const lon = onRoute ? p.lon : f.lon;

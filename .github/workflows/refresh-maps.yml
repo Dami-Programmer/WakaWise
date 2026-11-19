@@ -1,0 +1,75 @@
+# Rebuilds every state's map package from the latest OpenStreetMap, Protomaps and Overture data
+# and uploads them to Cloudflare R2. Phones pick up the new maps by themselves (every 14+ days).
+#
+# Needs two repository secrets (Settings -> Secrets and variables -> Actions):
+#   CLOUDFLARE_API_TOKEN   token with "Workers R2 Storage: Edit" permission
+#   CLOUDFLARE_ACCOUNT_ID  your Cloudflare account id
+# Optional: HF_TOKEN (Hugging Face read token) to also merge Foursquare places.
+name: Refresh maps
+
+on:
+  schedule:
+    - cron: '0 1 * * 1' # Mondays 02:00 Nigeria time
+  workflow_dispatch: {}
+
+concurrency: refresh-maps
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check secrets
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ]; then
+            echo "::error::Add the CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID repository secrets first"; exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: |
+          python -m pip install -r pipeline/requirements.txt
+          npm ci
+          mkdir -p tools/pmtiles
+          url=$(curl -s https://api.github.com/repos/protomaps/go-pmtiles/releases/latest \
+            | grep -o 'https://[^"]*Linux_x86_64.tar.gz' | head -1)
+          curl -sL "$url" | tar -xz -C tools/pmtiles pmtiles
+          tools/pmtiles/pmtiles version
+
+      - name: Download OpenStreetMap (Nigeria)
+        run: python pipeline/fetch_osm.py geofabrik
+      - name: State borders
+        run: python pipeline/build_states.py
+      - name: Roads, search and routing graphs
+        run: python pipeline/build_osm.py
+      - name: Map tiles
+        run: python pipeline/fetch_tiles.py
+      - name: Overture places
+        run: python pipeline/fetch_places.py
+      - name: Foursquare places
+        if: env.HF_TOKEN != ''
+        run: python pipeline/fetch_foursquare.py
+      - name: Merge places
+        run: python pipeline/add_places.py
+      - name: Index
+        run: python pipeline/build_index.py
+      - name: Check every state (size budget, routes, searches)
+        run: node pipeline/check.mjs
+
+      - name: Upload to R2
+        run: node pipeline/upload.mjs

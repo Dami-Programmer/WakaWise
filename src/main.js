@@ -12,6 +12,8 @@ import { loadUserPlaces, saveUserPlace } from './lib/userPlaces.js';
 import { loadGraph } from './routing/graph.js';
 import { route as findRoute, alternatives } from './routing/astar.js';
 import { Snapper } from './routing/snap.js';
+import { send, flush as flushOutbox } from './lib/outbox.js';
+import { tripsAllowed, bucket as tripBucket } from './lib/trips.js';
 import { Landmarks, buildSteps } from './routing/instructions.js';
 import { Navigator, CONE_SVG } from './nav/navigation.js';
 import { compass } from './lib/compass.js';
@@ -45,6 +47,7 @@ function restyle() {
 }
 const BASE = import.meta.env.BASE_URL;
 const NIGERIA = [[2.6, 4.2], [14.7, 13.9]];
+const indexedUserPlaces = new Set(); // user-added places already in the search index
 // creator badge, shown on the welcome sheet and in Settings
 const MADE_BY = '<a class="made-by" href="https://davey-portfolio.netlify.app/" target="_blank" rel="noopener"><img class="made-by-mark" src="/made-by.png" alt="" width="24" height="24">Made by <b>Newtz</b></a>';
 const ATTRIBUTION = '© <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors · Places © <a href="https://overturemaps.org" target="_blank">Overture Maps</a>';
@@ -94,7 +97,9 @@ function baseStyle(tilesUrl) {
     layers: [{ id: 'bg', type: 'background', paint: { 'background-color': dark ? '#0f1012' : '#e9eef2' } }],
   };
   if (tilesUrl) {
-    style.sources.protomaps = { type: 'vector', url: tilesUrl, attribution: ATTRIBUTION };
+    // Foursquare places (Apache 2.0) are credited when the state's search data includes them
+    const fsq = app.docs?.some((d) => d.s === 'f') ? ' · <a href="https://opensource.foursquare.com/os-places/" target="_blank">Foursquare</a>' : '';
+    style.sources.protomaps = { type: 'vector', url: tilesUrl, attribution: ATTRIBUTION + fsq };
     style.layers = layers('protomaps', namedFlavor(flavor), { lang: 'en' });
   }
   return style;
@@ -179,7 +184,22 @@ async function init() {
   const bySlug = (slug) => app.states.find((s) => s.slug === slug);
   const param = bySlug(new URLSearchParams(location.search).get('state'));
   const remembered = bySlug(safeGet('lastState'));
-  const saved = param || (remembered?.saved ? remembered : app.states.find((s) => s.saved));
+  app.pendingShare = sharedPlace();
+  const shareState = app.pendingShare && stateAt(app.states, app.pendingShare.lon, app.pendingShare.lat);
+  const saved = param || (shareState?.saved ? shareState : remembered?.saved ? remembered : app.states.find((s) => s.saved));
+
+  if (app.pendingShare && !shareState) {
+    toast('That shared place is outside Nigeria', 5000);
+    app.pendingShare = null;
+  }
+  if (shareState && !shareState.saved && !param) {
+    // someone shared a place in a state this phone doesn't have yet: offer that map
+    if (saved) await openState(saved, { quiet: true });
+    backgroundWork();
+    offerState(shareState, false);
+    toast(`The shared place is in ${shareState.name}. Download its map to see it.`, 7000);
+    return;
+  }
 
   if (saved) {
     // open the saved map at once, then look for the visitor in the background (GPS works offline)
@@ -341,10 +361,13 @@ async function useState(s, files, { quiet = false, downloaded = false } = {}) {
   const meta = JSON.parse(await text('graph.json'));
   app.graph = loadGraph(meta, await files.read('graph.bin'));
   app.docs = JSON.parse(await text('search.json'));
-  app.search = new Search(app.docs);
+  app.search?.close();
+  app.search = new SearchClient(app.docs);
+  indexedUserPlaces.clear();
   app.snapper = new Snapper(app.graph);
   app.landmarks = new Landmarks(app.docs);
   app.state = s;
+  app.build = String(build);
   app.dir = null;
   app.userMarkers.forEach((m) => m.remove());
   app.userMarkers = [];
@@ -358,7 +381,9 @@ async function useState(s, files, { quiet = false, downloaded = false } = {}) {
   closeSheet();
   if (app.me && stateAt([s], app.me.lon, app.me.lat)) map.jumpTo({ center: [app.me.lon, app.me.lat], zoom: 15 });
   else fitState(s);
-  if (downloaded) {
+  if (showPendingShare()) {
+    if (downloaded) toast(`${s.name} is ready offline ✓`);
+  } else if (downloaded) {
     toast(`${s.name} is ready offline ✓`);
     if (!installTip() && app.me && stateAt([s], app.me.lon, app.me.lat)) showMe();
   } else if (!quiet) toast(`${s.name} opened`);
@@ -379,6 +404,7 @@ function renderChip() {
 let bgRunning = false;
 async function backgroundWork() {
   if (bgRunning || !navigator.onLine) return;
+  flushOutbox(); // reports made while offline
   bgRunning = true;
   try {
     const packs = await listPacks();
@@ -453,9 +479,9 @@ input.addEventListener('input', () => {
 });
 // Tapping "Where to?" moves the bar to the top and shows saved and recent places (or results).
 input.addEventListener('focus', () => (input.value ? runSearch() : showHome()));
-$('search-form').addEventListener('submit', (e) => {
+$('search-form').addEventListener('submit', async (e) => {
   e.preventDefault();
-  const r = runSearch();
+  const r = await runSearch();
   if (r?.length) showPlace(r[0]);
   input.blur();
 });
@@ -489,6 +515,8 @@ const ICONS = {
   pin: '<svg class="i" viewBox="0 0 24 24"><path d="M12 21s-6-5.5-6-11a6 6 0 0 1 12 0c0 5.5-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
   car: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M5 17h14v-5l-2-5H7l-2 5z"/><path d="M5 12h14"/><circle cx="8" cy="17" r="1.6"/><circle cx="16" cy="17" r="1.6"/></svg>',
   walk: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="13" cy="4.5" r="1.8"/><path d="M10 21l2-6 3 3v3M12 15l-1-5 4 2 2 3M11 10l-3 2-1 3"/></svg>',
+  share: '<svg class="i" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/></svg>',
+  bike: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-7h5l3 7M10 10 8.5 6H6M15 10l1-3h2.5"/></svg>',
   go: '<svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M9 6l6 6-6 6"/></svg>',
 };
 const stateName = (slug) => app.states.find((x) => x.slug === slug)?.name ?? slug;
@@ -508,7 +536,7 @@ function showHome() {
   const recent = slug ? recentPlaces(slug) : [];
   openSheet(
     `<div class="section-label">Saved places</div>
-    <ul class="cards">${savedCard('home', 'Home')}${savedCard('work', 'Work')}${added
+    <ul class="cards">${app.state ? card('share-me', 0, ICONS.share, 'Share my location', 'Send where you are on WhatsApp or SMS') : ''}${savedCard('home', 'Home')}${savedCard('work', 'Work')}${added
       .map((p, i) => card('added', i, ICONS.pin, p.n, cap(p.k) || 'Added by you'))
       .join('')}</ul>
     <div class="section-label">Recent places</div>
@@ -548,15 +576,67 @@ function center() {
   return { lat: c.lat, lon: c.lng };
 }
 
+/** Search running in a Web Worker; `query` returns a Promise. Falls back to the main thread if workers fail. */
+class SearchClient {
+  constructor(docs) {
+    this.pending = new Map();
+    this.seq = 0;
+    try {
+      this.worker = new Worker(new URL('./lib/searchWorker.js', import.meta.url), { type: 'module' });
+      this.worker.onmessage = ({ data: m }) => {
+        if (m.type !== 'result') return;
+        this.pending.get(m.id)?.(m.results);
+        this.pending.delete(m.id);
+      };
+      this.worker.onerror = () => this.fallback(docs);
+      this.worker.postMessage({ type: 'build', docs });
+    } catch {
+      this.fallback(docs);
+    }
+    this.docs = docs;
+    this.added = [];
+  }
+  fallback(docs) {
+    if (this.local) return;
+    this.worker?.terminate();
+    this.worker = null;
+    this.local = new Search(docs);
+    this.added.forEach((p) => this.local.addUserPlace(p));
+    for (const [id, [q, c, done]] of this.waiting ?? []) done(this.local.query(q, c));
+    this.pending.clear();
+  }
+  addUserPlace(p) {
+    this.added.push(p);
+    if (this.local) this.local.addUserPlace(p);
+    else this.worker.postMessage({ type: 'add', place: p });
+  }
+  query(q, center) {
+    if (this.local) return Promise.resolve(this.local.query(q, center));
+    const id = ++this.seq;
+    return new Promise((resolve) => {
+      this.pending.set(id, resolve);
+      (this.waiting ??= new Map()).set(id, [q, center, resolve]);
+      this.worker.postMessage({ type: 'query', id, q, center: { lat: center.lat, lon: center.lon } });
+    }).finally(() => this.waiting.delete(id));
+  }
+  close() {
+    this.worker?.terminate();
+  }
+}
+
 let lastResults = [];
-function runSearch() {
+let searchSeq = 0;
+async function runSearch() {
   const q = input.value.trim();
   if (!q) return showHome();
   if (!app.search) {
     toast('Download a state map first');
     return null;
   }
-  lastResults = app.search.query(q, app.me && app.state && stateAt([app.state], app.me.lon, app.me.lat) ? app.me : center());
+  const seq = ++searchSeq;
+  const results = await app.search.query(q, app.me && app.state && stateAt([app.state], app.me.lon, app.me.lat) ? app.me : center());
+  if (seq !== searchSeq || input.value.trim() !== q) return results; // a newer search is on its way
+  lastResults = results;
   if (!lastResults.length) {
     openSheet(`<h2>No results</h2><p class="sub">Nothing matching "${esc(q)}" in ${esc(app.state.name)}. Try another spelling, a nearby landmark, or a plus code. Missing? Tap the map where it is and choose <b>Add a missing place</b>.</p>`, { search: true });
     return lastResults;
@@ -616,22 +696,69 @@ function showPlace(p) {
       <button class="btn" data-act="save-menu">Save</button>
       <button class="btn" data-act="share">Share</button>
       ${p.pin ? '<button class="btn" data-act="add-place">＋ Add a missing place</button>' : ''}
+      <button class="btn" data-act="report">Report a problem</button>
     </div>`);
+}
+
+// Where keke / okada are restricted (shown under keke/okada routes; check local rules)
+const BIKE_BANS = {
+  lagos: 'Okada and keke are banned on highways, bridges and in many Lagos areas (incl. Ikeja, Eti-Osa, Lagos Island, Apapa, Surulere). Check before you ride.',
+  'federal-capital-territory': 'Okada are banned in the Abuja city centre and many districts.',
+};
+
+/** A WakaWise link that opens this exact spot: /?at=lat,lon&n=name */
+function placeLink(p) {
+  const q = new URLSearchParams({ at: `${p.lat.toFixed(6)},${p.lon.toFixed(6)}` });
+  if (p.n && !p.me) q.set('n', p.n);
+  return `${location.origin}/?${q}`;
 }
 
 async function sharePlace(p) {
   const code = encode(p.lat, p.lon);
-  const text = `${p.n} — plus code ${code} (${p.lat.toFixed(5)}, ${p.lon.toFixed(5)})`;
-  const url = `https://www.openstreetmap.org/?mlat=${p.lat.toFixed(6)}&mlon=${p.lon.toFixed(6)}#map=17/${p.lat.toFixed(5)}/${p.lon.toFixed(5)}`;
+  const name = p.me ? 'My location' : p.n;
+  // the plus code works in any map app, even without WakaWise
+  const text = [name, `Plus code: ${code}`, `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`].join('\n');
+  const url = placeLink(p);
   try {
-    if (navigator.share) await navigator.share({ title: p.n, text, url });
-    else {
-      await navigator.clipboard.writeText(`${text}\n${url}`);
-      toast('Copied — paste it into WhatsApp or SMS');
-    }
-  } catch {
-    /* user cancelled */
+    if (navigator.share) return await navigator.share({ title: name, text, url });
+  } catch (e) {
+    if (e?.name === 'AbortError') return; // closed the share sheet
   }
+  const all = `${text}\n${url}`;
+  try {
+    await navigator.clipboard.writeText(all);
+    toast('Link copied. Paste it into WhatsApp or SMS');
+  } catch {
+    open(`https://wa.me/?text=${encodeURIComponent(all)}`, '_blank', 'noopener');
+  }
+}
+
+async function shareMyLocation() {
+  toast('Finding your location…');
+  const pos = await getPosition(15000);
+  if (pos.error) return toast(pos.message || "Couldn't get your location");
+  setMe(pos);
+  sharePlace({ n: 'My location', lat: pos.lat, lon: pos.lon, me: true });
+}
+
+/** A shared link (?at=lat,lon&n=name): the place to show once its state's map is open. */
+function sharedPlace() {
+  const q = new URLSearchParams(location.search);
+  const m = (q.get('at') || '').match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
+  if (!m) return null;
+  const lat = +m[1], lon = +m[2];
+  if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+  return { n: (q.get('n') || 'Shared place').slice(0, 120), k: 'shared place', lat, lon, pin: true };
+}
+
+/** Show the shared place if the open map covers it. */
+function showPendingShare() {
+  const p = app.pendingShare;
+  if (!p || !app.state || !stateAt([app.state], p.lon, p.lat)) return false;
+  app.pendingShare = null;
+  history.replaceState(null, '', location.pathname); // a reload shouldn't open it again
+  showPlace(p);
+  return true;
 }
 
 /* ------------------------------------------------------------------ map clicks */
@@ -675,17 +802,46 @@ function addPlaceForm(p) {
       <label class="field">Name<input name="n" required maxlength="80" placeholder="e.g. Mama Tunde Provisions" /></label>
       <label class="field">Type<select name="k">${CATEGORIES.map((c) => `<option>${c}</option>`).join('')}</select></label>
       <label class="field">Street or landmark (optional)<input name="ad" maxlength="120" placeholder="e.g. Opposite First Bank, Allen Avenue" /></label>
+      ${p.me ? '' : '<label class="check"><input type="checkbox" name="share" /> Share it with WakaWise so others can find it too (not for homes or private places)</label>'}
       <div class="row"><button class="btn primary" type="submit">Save place</button><button class="btn" type="button" data-act="cancel">Cancel</button></div>
     </form>
-    <p class="note">Saved on this phone and searchable straight away. In the full version, places you add are shared to improve the map for everyone.</p>`);
+    <p class="note">Saved on this phone and searchable straight away. Shared places are checked and added to the map for everyone in a later update.</p>`);
   $('add-form').addEventListener('submit', (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
     const place = { n: f.get('n').trim(), k: f.get('k').toLowerCase(), ad: f.get('ad').trim(), lat: p.lat, lon: p.lon, a: nearestArea(p.lat, p.lon) };
     const saved = saveUserPlace(app.state.slug, place);
     addUserPlaceToMap(saved);
-    toast(`Added "${saved.n}". Try searching for it.`);
+    if (f.get('share')) send('/api/report', { kind: 'place', slug: app.state.slug, lat: p.lat, lon: p.lon, topic: place.k, name: place.n, detail: place.ad });
+    toast(f.get('share') ? `Added "${saved.n}" and shared it. Thank you!` : `Added "${saved.n}". Try searching for it.`);
     showPlace({ ...saved, s: 'u' });
+  });
+}
+
+const PROBLEMS = [
+  ['closed', 'Road is closed or blocked'],
+  ['missing-road', 'A road is missing'],
+  ['wrong-name', 'Wrong name'],
+  ['wrong-place', 'Place is in the wrong spot'],
+  ['not-here', "Place doesn't exist / has closed"],
+  ['other', 'Something else'],
+];
+function reportForm(p) {
+  openSheet(`
+    <h2>Report a problem</h2>
+    <p class="sub">${esc(p.n)} · ${encode(p.lat, p.lon)}</p>
+    <form id="report-form">
+      <label class="field">What's wrong?<select name="topic">${PROBLEMS.map(([v, l]) => `<option value="${v}">${l}</option>`).join('')}</select></label>
+      <label class="field">Details (optional)<textarea name="detail" maxlength="500" rows="3" placeholder="e.g. Bridge closed for repairs since March"></textarea></label>
+      <div class="row"><button class="btn primary" type="submit">Send report</button><button class="btn" type="button" data-act="cancel">Cancel</button></div>
+    </form>
+    <p class="note">Sent to the WakaWise team with this spot on the map. No name or phone number is sent. With no data, it's sent once you're back online.</p>`);
+  $('report-form').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    send('/api/report', { kind: 'problem', slug: app.state.slug, lat: p.lat, lon: p.lon, topic: f.get('topic'), name: p.me ? '' : p.n, detail: f.get('detail') });
+    toast(navigator.onLine ? 'Thanks! Report sent.' : "Thanks! It'll be sent when you're back online.", 4000);
+    showPlace(p);
   });
 }
 
@@ -703,7 +859,6 @@ function nearestArea(lat, lon) {
   return best;
 }
 
-const indexedUserPlaces = new Set();
 function addUserPlaceToMap(p) {
   if (app.search && !indexedUserPlaces.has(p.id)) {
     app.search.addUserPlace(p);
@@ -872,10 +1027,13 @@ function showSettings() {
     <div class="row">${opt('theme', 'dark', 'Dark', theme === 'dark')}${opt('theme', 'light', 'Light', theme === 'light')}${opt('theme', 'auto', 'Same as phone', theme === 'auto')}</div>
     <h3>Voice directions</h3>
     <div class="row">${opt('voice', 'on', 'On', !muted)}${opt('voice', 'off', 'Off', muted)}</div>
+    <h3>Help improve travel times</h3>
+    <p class="sub">When you drive with WakaWise, send how long each road took, so times can be based on real traffic. The first and last 500 m of every trip are left out, and no name, phone number or trip history is sent.</p>
+    <div class="row">${opt('trips', 'on', 'On', tripsAllowed())}${opt('trips', 'off', 'Off', !tripsAllowed())}</div>
     ${saved.home || saved.work ? `<h3>Saved places</h3><ul class="list">${sv('home', 'Home')}${sv('work', 'Work')}</ul>` : ''}
     <h3>Maps on this device</h3>
     <div class="row"><button class="btn" data-act="pick">Manage state maps</button>${app.state ? '<button class="btn" data-act="clear-recent">Clear recent places</button>' : ''}</div>
-    <p class="note"><b>WakaWise</b>: maps that work with no data.<br>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL). Places © <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>. Map style © Protomaps. Font: Noto Sans (OFL).</p>
+    <p class="note"><b>WakaWise</b>: maps that work with no data.<br>Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a> (ODbL). Places © <a href="https://overturemaps.org" target="_blank" rel="noopener">Overture Maps</a>${app.docs?.some((d) => d.s === 'f') ? ', <a href="https://opensource.foursquare.com/os-places/" target="_blank" rel="noopener">Foursquare</a> (Apache 2.0)' : ''}. Map style © Protomaps. Font: Noto Sans (OFL).</p>
     ${MADE_BY}`);
 }
 
@@ -938,19 +1096,48 @@ function viaRoad(r) {
   return best;
 }
 
-/** A point on the part of route `i` that the other routes don't share, for its time label. */
-function labelPoint(i) {
+/** Candidate points for route `i`'s time label, on the part the other routes don't share (middle first). */
+function labelPoints(i) {
   const d = app.dir;
   const g = app.graph;
   const others = new Set();
   d.routes.forEach((r, k) => k !== i && r.entries.forEach((x) => others.add(x >>> 1)));
   const own = d.routes[i].entries.filter((x) => !others.has(x >>> 1));
   const list = own.length ? own : d.routes[i].entries;
-  const pick = list[list.length >> 1];
-  if (pick == null) return d.routes[i].coords[0];
-  const e = pick >>> 1;
-  return [(g.nodeLon[g.edgeFrom[e]] + g.nodeLon[g.edgeTo[e]]) / 2 / g.scale, (g.nodeLat[g.edgeFrom[e]] + g.nodeLat[g.edgeTo[e]]) / 2 / g.scale];
+  if (!list.length) return [d.routes[i].coords[0]];
+  return [0.5, 0.35, 0.65, 0.2, 0.8, 0.1, 0.9].map((f) => {
+    const e = list[Math.min(list.length - 1, Math.floor(list.length * f))] >>> 1;
+    return [(g.nodeLon[g.edgeFrom[e]] + g.nodeLon[g.edgeTo[e]]) / 2 / g.scale, (g.nodeLat[g.edgeFrom[e]] + g.nodeLat[g.edgeTo[e]]) / 2 / g.scale];
+  });
 }
+
+/** Put the time labels where they don't cover each other on screen (the selected route's label goes first). */
+function placeRouteChips() {
+  const chips = app.routeChips;
+  if (!chips.length || !app.dir) return;
+  const order = chips.map((_, i) => i).sort((x, y) => (y === app.dir.sel) - (x === app.dir.sel));
+  const boxes = [];
+  const hits = (bx) => boxes.some((o) => bx.x0 < o.x1 && bx.x1 > o.x0 && bx.y0 < o.y1 && bx.y1 > o.y0);
+  for (const i of order) {
+    const m = chips[i];
+    const el = m.getElement();
+    const w = (el.offsetWidth || 70) + 8;
+    const h = (el.offsetHeight || 30) + 6;
+    const box = (p) => {
+      const q = map.project(p);
+      return { x0: q.x - w / 2, x1: q.x + w / 2, y0: q.y - h, y1: q.y };
+    };
+    const cands = m._cands;
+    const pick = cands.find((p) => !hits(box(p)));
+    // no free spot (tiny screen or zoomed far out): hide this label; the list in the panel still shows every time
+    el.style.visibility = pick || !boxes.length ? '' : 'hidden';
+    m.setLngLat(pick ?? cands[0]);
+    if (pick || !boxes.length) boxes.push(box(pick ?? cands[0]));
+  }
+}
+
+map.on('zoomend', placeRouteChips);
+map.on('moveend', placeRouteChips);
 
 function clearRouteChips() {
   app.routeChips.forEach((m) => m.remove());
@@ -984,8 +1171,11 @@ function drawRoute() {
         ev.stopPropagation();
         selectRoute(i);
       });
-      app.routeChips.push(new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(labelPoint(i)).addTo(map));
+      const m = new maplibregl.Marker({ element: el, anchor: 'bottom' });
+      m._cands = labelPoints(i);
+      app.routeChips.push(m.setLngLat(m._cands[0]).addTo(map));
     });
+    placeRouteChips();
   }
   const [a, b] = d.snap;
   const pt = (n) => [g.nodeLon[n] / g.scale, g.nodeLat[n] / g.scale];
@@ -1006,7 +1196,7 @@ function renderDirections() {
   if (!d.from) {
     body = `<p class="sub"><b>Tap the map</b> to choose where you're starting from, or use your location.</p><div class="row"><button class="btn" data-act="use-me">Use my location</button></div>`;
   } else if (!d.result) {
-    body = `<p class="sub">No ${d.mode === 'car' ? 'driving' : 'walking'} route found between these points in the downloaded map.</p>`;
+    body = `<p class="sub">No ${{ car: 'driving', bike: 'keke or okada', foot: 'walking' }[d.mode]} route found between these points in the downloaded map.</p>`;
   } else {
     const r = d.result;
     const range = travelRange(r.seconds, d.mode, app.state.slug);
@@ -1025,6 +1215,7 @@ function renderDirections() {
     body = `
       ${choices}
       <div class="summary"><span class="time">${formatRange(range)}</span><span class="sub">${formatDistance(r.meters)} · ${esc(range.label)}</span></div>
+      ${d.mode === 'bike' ? `<p class="note">Keke and okada routes avoid expressways.${BIKE_BANS[app.state.slug] ? ` ${BIKE_BANS[app.state.slug]}` : ''} Times are estimates.</p>` : ''}
       ${d.mode === 'car' ? `<p class="note">Estimated for ${esc(range.label)}. No live traffic offline; this range is based on typical ${esc(app.state.name)} traffic at this time of day.</p>` : ''}
       <div class="row"><button class="btn primary" data-act="navigate"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 3 19 20 12 16.5 5 20z" fill="currentColor"/></svg> Start</button><button class="btn" data-act="pick-start">Change start</button></div>
       <h3>Steps</h3><ul class="list steps">${steps}</ul>
@@ -1036,7 +1227,7 @@ function renderDirections() {
       <div class="end"><span class="dot"></span><button data-act="pick-start">${esc(d.from?.n ?? 'Choose start…')}</button></div>
       <div class="end"><span class="dot to"></span><button data-act="back-to-place">${esc(d.to.n)}</button></div>
     </div>
-    <div class="mode-row">${modeBtn('car', `${ICONS.car} Drive`)}${modeBtn('foot', `${ICONS.walk} Walk`)}</div>
+    <div class="mode-row">${modeBtn('car', `${ICONS.car} Drive`)}${modeBtn('bike', `${ICONS.bike} Keke/Okada`)}${modeBtn('foot', `${ICONS.walk} Walk`)}</div>
     ${body}
     <div class="row"><button class="btn" data-act="close-dir">Close</button></div>`);
 }
@@ -1068,6 +1259,8 @@ function startNavigation({ simulate = false } = {}) {
   const first = d.steps[1];
   app.nav = new Navigator({
     map, maplibregl, graph: app.graph, slug: app.state.slug, simulate, compass,
+    recordTrips: !simulate && d.mode === 'car' && tripsAllowed(),
+    onTrip: (edges) => send('/api/trips', { slug: app.state.slug, build: app.build, bucket: tripBucket(), edges: edges.slice(0, 1500) }),
     dir: d,
     reroute(lat, lon) {
       const a = app.snapper.nearest(lat, lon, d.mode);
@@ -1138,6 +1331,10 @@ sheet.addEventListener('click', async (e) => {
     safeSet('theme', el.dataset.v);
     restyle();
     showSettings();
+  } else if (act === 'trips') {
+    if (el.dataset.v === 'on') safeSet('shareTrips', '1');
+    else safeRemove('shareTrips');
+    showSettings();
   } else if (act === 'voice') {
     safeSet('navMuted', el.dataset.v === 'off' ? '1' : '0');
     showSettings();
@@ -1152,7 +1349,9 @@ sheet.addEventListener('click', async (e) => {
   else if (act === 'result') showPlace(lastResults[+el.dataset.i]);
   else if (act === 'directions') startDirections(app.current);
   else if (act === 'share') sharePlace(app.current);
+  else if (act === 'share-me') shareMyLocation();
   else if (act === 'add-place') addPlaceForm(app.current);
+  else if (act === 'report') reportForm(app.current);
   else if (act === 'cancel') showPlace(app.current);
   else if (act === 'mode') {
     app.dir.mode = el.dataset.mode;
