@@ -15,7 +15,7 @@ import { Snapper } from './routing/snap.js';
 import { send, flush as flushOutbox } from './lib/outbox.js';
 import { tripsAllowed, bucket as tripBucket } from './lib/trips.js';
 import { Landmarks, buildSteps } from './routing/instructions.js';
-import { Navigator, CONE_SVG } from './nav/navigation.js';
+import { Navigator, CONE_SVG, turnSvg } from './nav/navigation.js';
 import { compass } from './lib/compass.js';
 import { recentPlaces, addRecent, clearRecent, savedPlaces, setSaved } from './lib/places.js';
 import { listPacks, loadFiles, downloadPack, applyUpdate, progressOf, removePack, keepStorage, freeSpace } from './lib/packs.js';
@@ -239,7 +239,7 @@ const paused = (slug) => safeGet(`paused:${slug}`) === '1';
 const setPaused = (slug, on) => (on ? safeSet(`paused:${slug}`, '1') : safeRemove(`paused:${slug}`));
 
 async function sizeLine(s) {
-  if (s.saved) return `Saved on this device ✓ · ${mb(s.info.bytes)}`;
+  if (s.saved) return `Saved on this device · ${mb(s.info.bytes)}`;
   if (!s.info) return navigator.onLine ? 'Map not built yet' : "You're offline";
   const got = await progressOf(s.slug, s.info);
   return got ? `${mb(got)} of ${mb(s.info.bytes)} downloaded` : mb(s.info.bytes);
@@ -250,7 +250,7 @@ async function offerState(s, detected) {
   if (s.saved) {
     openSheet(`
       <h2>${esc(s.name)}</h2>
-      <p class="sub">Saved on this device ✓ (${mb(s.info.bytes)}). Works with no data.</p>
+      <p class="sub">Saved on this device (${mb(s.info.bytes)}). Works with no data.</p>
       <div class="row">
         <button class="btn primary" data-act="open" data-slug="${s.slug}">Open map</button>
         <button class="btn" data-act="pick">Choose another state</button>
@@ -281,7 +281,7 @@ async function openStatePicker(title = 'Choose a state', note = '') {
   const ordered = [...app.states].sort((a, b) => (b === here) - (a === here) || b.saved - a.saved);
   const lines = await Promise.all(ordered.map(sizeLine));
   const items = ordered
-    .map((s, i) => `<li><button data-act="offer" data-slug="${s.slug}"><span class="pin-ico">${s.saved ? '✅' : '🗺️'}</span><span><div class="title">${esc(s.name)}${s === here ? '<span class="badge">you are here</span>' : ''}</div><div class="meta">${esc(lines[i])}</div></span></button></li>`)
+    .map((s, i) => `<li><button data-act="offer" data-slug="${s.slug}"><span class="pin-ico${s.saved ? ' ok' : ''}">${s.saved ? CAT.check : CAT.map}</span><span><div class="title">${esc(s.name)}${s === here ? '<span class="badge">you are here</span>' : ''}</div><div class="meta">${esc(lines[i])}</div></span></button></li>`)
     .join('');
   openSheet(`<h2>${esc(title)}</h2>${note ? `<p class="sub">${esc(note)}</p>` : ''}<ul class="list">${items}</ul>`);
 }
@@ -391,9 +391,9 @@ async function useState(s, files, { quiet = false, downloaded = false } = {}) {
   if (app.me && stateAt([s], app.me.lon, app.me.lat)) map.jumpTo({ center: [app.me.lon, app.me.lat], zoom: 15 });
   else fitState(s);
   if (showPendingShare()) {
-    if (downloaded) toast(`${s.name} is ready offline ✓`);
+    if (downloaded) toast(`${s.name} is ready to use offline`);
   } else if (downloaded) {
-    toast(`${s.name} is ready offline ✓`);
+    toast(`${s.name} is ready to use offline`);
     if (!installTip() && app.me && stateAt([s], app.me.lon, app.me.lat)) showMe();
   } else if (!quiet) toast(`${s.name} opened`);
 }
@@ -403,7 +403,7 @@ function renderChip() {
   if (!app.state) return;
   const other = bg && bg.slug !== app.state.slug ? `${app.states.find((x) => x.slug === bg.slug).name.replace(/ State$/, '')} ` : '';
   const extra = bg ? ` · saving ${other}${bg.pct}%` : '';
-  $('state-chip').innerHTML = `<span class="dot"></span>${esc(app.state.name)} · Ready offline ✓${extra}`;
+  $('state-chip').innerHTML = `${CAT.check}<span>${esc(app.state.name.replace(/ State$/, ''))}</span><span class="chip-meta">Ready offline${extra}</span>`;
 }
 
 /**
@@ -439,7 +439,7 @@ async function backgroundWork() {
         if (app.state !== s) {
           await applyUpdate(s.slug);
           s.saved = true;
-          toast(`${s.name} map ${p.active ? 'updated' : 'downloaded'} ✓`);
+          toast(`${s.name} map ${p.active ? 'updated' : 'downloaded'}`);
         } else toast(`A newer ${s.name} map is saved. It opens next time you load the page.`, 6000);
       } catch (err) {
         console.warn('background download stopped', s.slug, err);
@@ -526,6 +526,10 @@ const ICONS = {
   walk: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="13" cy="4.5" r="1.8"/><path d="M10 21l2-6 3 3v3M12 15l-1-5 4 2 2 3M11 10l-3 2-1 3"/></svg>',
   share: '<svg class="i" viewBox="0 0 24 24"><circle cx="18" cy="5" r="2.5"/><circle cx="6" cy="12" r="2.5"/><circle cx="18" cy="19" r="2.5"/><path d="m8.2 10.8 7.6-4.4M8.2 13.2l7.6 4.4"/></svg>',
   bike: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><circle cx="6" cy="17" r="3"/><circle cx="18" cy="17" r="3"/><path d="M6 17l4-7h5l3 7M10 10 8.5 6H6M15 10l1-3h2.5"/></svg>',
+  turn: '<svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 2.8 21.2 12 12 21.2 2.8 12z"/><path d="M9 14v-2.5a1.5 1.5 0 0 1 1.5-1.5H15M13 8l2 2-2 2"/></svg>',
+  bookmark: '<svg class="i" viewBox="0 0 24 24"><path d="M6.5 3.5h11v17L12 16.5l-5.5 4z"/></svg>',
+  plus: '<svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  flag: '<svg class="i" viewBox="0 0 24 24"><path d="M5 21V4M5 4.5h11l-2 4 2 4H5"/></svg>',
   go: '<svg class="i" viewBox="0 0 24 24" style="width:20px;height:20px"><path d="M9 6l6 6-6 6"/></svg>',
 };
 const stateName = (slug) => app.states.find((x) => x.slug === slug)?.name ?? slug;
@@ -658,15 +662,34 @@ async function runSearch() {
 }
 
 const cap = (s) => (s ? s[0].toUpperCase() + s.slice(1) : '');
+const svg = (d) => `<svg class="i" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const CAT = {
+  street: svg('<path d="M8 3 5 21M16 3l3 18M12 4v2.5M12 10.5v3M12 17.5V20"/>'),
+  bus: svg('<rect x="5" y="3" width="14" height="14" rx="2.5"/><path d="M5 11h14M8 17v3M16 17v3"/><path d="M8.5 14h.01M15.5 14h.01"/>'),
+  bank: svg('<path d="M3 9.5 12 4l9 5.5"/><path d="M5.5 10v8M10 10v8M14 10v8M18.5 10v8M3.5 20.5h17"/>'),
+  fuel: svg('<path d="M4.5 20.5V5.5a2 2 0 0 1 2-2h5a2 2 0 0 1 2 2v15M3.5 20.5h11M4.5 10h9"/><path d="M13.5 8l3 2.5v6a1.5 1.5 0 0 0 3 0V9L17 6"/>'),
+  worship: svg('<path d="M12 2.5v4M10.2 4.3h3.6"/><path d="M5.5 20.5v-9L12 7l6.5 4.5v9"/><path d="M10 20.5v-3.5a2 2 0 0 1 4 0v3.5M3.5 20.5h17"/>'),
+  health: svg('<rect x="3.5" y="3.5" width="17" height="17" rx="4"/><path d="M12 8v8M8 12h8"/>'),
+  school: svg('<path d="M2.5 9 12 4.5 21.5 9 12 13.5z"/><path d="M6.5 11v4.5c3 2.2 8 2.2 11 0V11M21.5 9v5"/>'),
+  food: svg('<path d="M6.5 3v6a2 2 0 0 0 4 0V3M8.5 3v18"/><path d="M17.5 21V3c-2 1-3 3.5-3 7.5h3"/>'),
+  hotel: svg('<path d="M3 19V6M3 15h18v4M21 15v-2.5A2.5 2.5 0 0 0 18.5 10H11v5"/><circle cx="7" cy="12" r="1.8"/>'),
+  shop: svg('<path d="M5 8h14l-1.2 12.5H6.2z"/><path d="M9 10V6.5a3 3 0 0 1 6 0V10"/>'),
+  area: svg('<path d="M3 20.5h18M5 20.5V10l5-3v13.5M10 20.5V4l9 5v11.5"/>'),
+  code: svg('<circle cx="12" cy="12" r="6.5"/><path d="M12 2.5v4M12 17.5v4M2.5 12h4M17.5 12h4"/>'),
+  map: svg('<path d="M9 4 3.5 6v14L9 18l6 2 5.5-2V4L15 6z"/><path d="M9 4v14M15 6v14"/>'),
+  check: svg('<circle cx="12" cy="12" r="9"/><path d="m8 12.5 2.7 2.7L16 10"/>'),
+};
 function iconFor(k = '') {
   const rules = [
-    [/street|road/, '🛣️'], [/bus/, '🚌'], [/bank|atm/, '🏦'], [/fuel|gas|petrol|filling/, '⛽'], [/church|chapel/, '⛪'],
-    [/mosque/, '🕌'], [/hospital|clinic|health|doctor|pharma/, '🏥'], [/school|college|university|education/, '🎓'],
-    [/restaurant|food|eat|cafe|bar/, '🍽️'], [/hotel|lodg|guest/, '🏨'], [/mall|shop|store|market|supermarket|retail/, '🛍️'],
-    [/suburb|neighbourhood|town|city|village|quarter|locality|hamlet|island/, '🏘️'], [/plus code|coordinates/, '📍'],
+    [/street|road/, 'street'], [/bus|transport|station|terminal|park/, 'bus'], [/bank|atm|credit union|financ/, 'bank'],
+    [/fuel|gas|petrol|filling/, 'fuel'], [/church|chapel|mosque|worship|temple/, 'worship'],
+    [/hospital|clinic|health|doctor|pharma|medic|dentist/, 'health'], [/school|college|university|education|learning/, 'school'],
+    [/restaurant|food|eat|cafe|bar|bakery|fast/, 'food'], [/hotel|lodg|guest|motel/, 'hotel'],
+    [/mall|shop|store|market|supermarket|retail|boutique/, 'shop'],
+    [/suburb|neighbourhood|town|city|village|quarter|locality|hamlet|island|district/, 'area'], [/plus code|coordinates/, 'code'],
   ];
-  for (const [re, ico] of rules) if (re.test(k)) return ico;
-  return '📍';
+  for (const [re, ico] of rules) if (re.test(k)) return CAT[ico];
+  return ICONS.pin;
 }
 
 /* ------------------------------------------------------------------ place card */
@@ -700,12 +723,14 @@ function showPlace(p) {
     ${p.ad ? `<p class="sub">${esc(p.ad)}</p>` : ''}
     <p class="sub">${dist}Plus code <b>${code}</b></p>
     <div class="row">
-      ${app.savingAs ? `<button class="btn primary" data-act="save-as" data-kind="${app.savingAs}">Save as ${app.savingAs === 'home' ? 'Home' : 'Work'}</button>` : ''}
-      <button class="btn${app.savingAs ? '' : ' primary'}" data-act="directions">Directions</button>
-      <button class="btn" data-act="save-menu">Save</button>
-      <button class="btn" data-act="share">Share</button>
-      ${p.pin ? '<button class="btn" data-act="add-place">＋ Add a missing place</button>' : ''}
-      <button class="btn" data-act="report">Report a problem</button>
+      ${app.savingAs ? `<button class="btn primary grow" data-act="save-as" data-kind="${app.savingAs}">Save as ${app.savingAs === 'home' ? 'Home' : 'Work'}</button>` : ''}
+      <button class="btn grow${app.savingAs ? '' : ' primary'}" data-act="directions">${ICONS.turn} Directions</button>
+    </div>
+    <div class="actions">
+      <button data-act="save-menu"><span>${ICONS.bookmark}</span>Save</button>
+      <button data-act="share"><span>${ICONS.share}</span>Share</button>
+      ${p.pin ? `<button data-act="add-place"><span>${ICONS.plus}</span>Add place</button>` : ''}
+      <button data-act="report"><span>${ICONS.flag}</span>Report</button>
     </div>`);
 }
 
@@ -1027,18 +1052,20 @@ function showSettings() {
   const theme = safeGet('theme') || 'dark';
   const muted = safeGet('navMuted') === '1';
   const saved = savedPlaces();
-  const opt = (act, v, label, on) => `<button class="btn" data-act="${act}" data-v="${v}" aria-pressed="${on}">${label}</button>`;
+  const opt = (act, v, label, on) => `<button data-act="${act}" data-v="${v}" aria-pressed="${on}">${label}</button>`;
+  // a switch sends the value it will change to
+  const sw = (act, on, label) => `<button class="switch" role="switch" aria-checked="${on}" aria-label="${label}" data-act="${act}" data-v="${on ? 'off' : 'on'}"><span></span></button>`;
   const sv = (kind, label) =>
     saved[kind] ? `<li><button data-act="clear-saved" data-kind="${kind}"><span class="pin-ico">${ICONS[kind]}</span><span><div class="title">${label}</div><div class="meta">${esc(saved[kind].n)}</div></span><span class="dist">Remove</span></button></li>` : '';
   openSheet(`
     <h2>Settings</h2>
     <h3>Appearance</h3>
-    <div class="row">${opt('theme', 'dark', 'Dark', theme === 'dark')}${opt('theme', 'light', 'Light', theme === 'light')}${opt('theme', 'auto', 'Same as phone', theme === 'auto')}</div>
-    <h3>Voice directions</h3>
-    <div class="row">${opt('voice', 'on', 'On', !muted)}${opt('voice', 'off', 'Off', muted)}</div>
-    <h3>Help improve travel times</h3>
-    <p class="sub">When you drive with WakaWise navigation, send how long each road took, so travel times can be based on real traffic. The start and end of each trip (500 m) are left out, and only totals per road are kept: no name, phone number or account.</p>
-    <div class="row">${opt('trips', 'on', 'On', tripsAllowed())}${opt('trips', 'off', 'Off', !tripsAllowed())}</div>
+    <div class="seg">${opt('theme', 'dark', 'Dark', theme === 'dark')}${opt('theme', 'light', 'Light', theme === 'light')}${opt('theme', 'auto', 'Same as phone', theme === 'auto')}</div>
+    <h3>Navigation</h3>
+    <div class="settings-group">
+      <div class="setting"><span><div class="title">Voice directions</div><div class="meta">Spoken turn-by-turn instructions</div></span>${sw('voice', !muted, 'Voice directions')}</div>
+      <div class="setting"><span><div class="title">Help improve travel times</div><div class="meta">When you drive with WakaWise navigation, send how long each road took, so travel times can be based on real traffic. The start and end of each trip (500 m) are left out, and only totals per road are kept: no name, phone number or account.</div></span>${sw('trips', tripsAllowed(), 'Help improve travel times')}</div>
+    </div>
     ${saved.home || saved.work ? `<h3>Saved places</h3><ul class="list">${sv('home', 'Home')}${sv('work', 'Work')}</ul>` : ''}
     <h3>Maps on this device</h3>
     <div class="row"><button class="btn" data-act="pick">Manage state maps</button>${app.state ? '<button class="btn" data-act="clear-recent">Clear recent places</button>' : ''}</div>
@@ -1197,10 +1224,9 @@ function drawRoute() {
   });
 }
 
-const ARROWS = { depart: '⬆', straight: '⬆', 'slight-left': '↖', 'slight-right': '↗', left: '⬅', right: '➡', uturn: '↩', roundabout: '⟳', arrive: '📍' };
 function renderDirections() {
   const d = app.dir;
-  const modeBtn = (m, label) => `<button class="btn" aria-pressed="${d.mode === m}" data-act="mode" data-mode="${m}">${label}</button>`;
+  const modeBtn = (m, label) => `<button aria-pressed="${d.mode === m}" data-act="mode" data-mode="${m}">${label}</button>`;
   let body = '';
   if (!d.from) {
     body = `<p class="sub"><b>Tap the map</b> to choose where you're starting from, or use your location.</p><div class="row"><button class="btn" data-act="use-me">Use my location</button></div>`;
@@ -1210,23 +1236,24 @@ function renderDirections() {
     const r = d.result;
     const range = travelRange(r.seconds, d.mode, app.state.slug);
     const steps = d.steps
-      .map((s, i) => `<li data-act="step" data-i="${i}"><span class="arrow">${ARROWS[s.type] ?? '⬆'}</span><span><div>${esc(s.text)}</div>${s.distance ? `<div class="d">${formatDistance(s.distance)}</div>` : ''}</span></li>`)
+      .map((s, i) => `<li data-act="step" data-i="${i}">${turnSvg(s.type === 'depart' ? 'straight' : s.type, 'step-ico')}<span><div>${esc(s.text)}</div>${s.distance ? `<div class="d">${formatDistance(s.distance)}</div>` : ''}</span></li>`)
       .join('');
-    const choices = d.routes.length > 1
-      ? `<ul class="list routes">${d.routes
-          .map((x, i) => {
-            const rr = travelRange(x.seconds, d.mode, app.state.slug);
-            const via = viaRoad(x);
-            return `<li><button data-act="route" data-i="${i}" aria-pressed="${i === d.sel}"><span class="pin-ico">${i === d.sel ? '✓' : ''}</span><span><div class="title">${formatRange(rr)}${i === 0 ? '<span class="badge">fastest</span>' : ''}</div><div class="meta">${formatDistance(x.meters)}${via ? ` · via ${esc(via)}` : ''}</div></span></button></li>`;
-          })
-          .join('')}</ul>`
-      : '';
+    // one card per route (fastest first); the selected one is outlined
+    const choices = `<div class="routes">${d.routes
+      .map((x, i) => {
+        const rr = travelRange(x.seconds, d.mode, app.state.slug);
+        const via = viaRoad(x);
+        const mid = (q) => (q.min + q.max) / 2;
+        const extra = Math.max(1, Math.round((mid(rr) - mid(travelRange(d.routes[0].seconds, d.mode, app.state.slug))) / 60));
+        const tag = d.routes.length > 1 ? (i === 0 ? 'Fastest' : `${extra} min slower`) : esc(range.label);
+        return `<button class="route" data-act="route" data-i="${i}" aria-pressed="${i === d.sel}"><span class="route-time">${formatRange(rr)}</span><span class="route-tag">${tag}</span><span class="route-meta">${formatDistance(x.meters)}${via ? ` · via ${esc(via)}` : ''}</span></button>`;
+      })
+      .join('')}</div>`;
     body = `
       ${choices}
-      <div class="summary"><span class="time">${formatRange(range)}</span><span class="sub">${formatDistance(r.meters)} · ${esc(range.label)}</span></div>
       ${d.mode === 'bike' ? `<p class="note">Keke and okada routes avoid expressways.${BIKE_BANS[app.state.slug] ? ` ${BIKE_BANS[app.state.slug]}` : ''} Times are estimates.</p>` : ''}
       ${d.mode === 'car' ? `<p class="note">Estimated for ${esc(range.label)}. No live traffic offline; this range is based on typical ${esc(app.state.name)} traffic at this time of day.</p>` : ''}
-      <div class="row"><button class="btn primary" data-act="navigate"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 3 19 20 12 16.5 5 20z" fill="currentColor"/></svg> Start</button><button class="btn" data-act="pick-start">Change start</button></div>
+      <div class="sheet-actions"><button class="btn primary grow" data-act="navigate"><svg class="i" viewBox="0 0 24 24" style="width:18px;height:18px"><path d="M12 3 19 20 12 16.5 5 20z" fill="currentColor"/></svg> Start</button><button class="btn" data-act="pick-start">Change start</button></div>
       <h3>Steps</h3><ul class="list steps">${steps}</ul>
       <p class="note">Route found offline in ${d.ms.toFixed(0)} ms.</p>`;
   }
@@ -1236,9 +1263,8 @@ function renderDirections() {
       <div class="end"><span class="dot"></span><button data-act="pick-start">${esc(d.from?.n ?? 'Choose start…')}</button></div>
       <div class="end"><span class="dot to"></span><button data-act="back-to-place">${esc(d.to.n)}</button></div>
     </div>
-    <div class="mode-row">${modeBtn('car', `${ICONS.car} Drive`)}${modeBtn('bike', `${ICONS.bike} Keke/Okada`)}${modeBtn('foot', `${ICONS.walk} Walk`)}</div>
-    ${body}
-    <div class="row"><button class="btn" data-act="close-dir">Close</button></div>`);
+    <div class="seg mode-row">${modeBtn('car', `${ICONS.car} Drive`)}${modeBtn('bike', `${ICONS.bike} Keke`)}${modeBtn('foot', `${ICONS.walk} Walk`)}</div>
+    ${body}`);
 }
 
 function closeDirections() {
@@ -1355,7 +1381,9 @@ sheet.addEventListener('click', async (e) => {
   else if (act === 'added') showPlace({ ...loadUserPlaces(app.state.slug)[+el.dataset.i], s: 'u' });
   else if (act === 'save-as') saveAs(el.dataset.kind);
   else if (act === 'save-menu') {
-    el.closest('.row').innerHTML = `<button class="btn" data-act="save-as" data-kind="home">Set as Home</button><button class="btn" data-act="save-as" data-kind="work">Set as Work</button><button class="btn" data-act="cancel">Cancel</button>`;
+    const box = el.closest('.actions, .row');
+    box.className = 'row';
+    box.innerHTML = `<button class="btn" data-act="save-as" data-kind="home">Set as Home</button><button class="btn" data-act="save-as" data-kind="work">Set as Work</button><button class="btn" data-act="cancel">Cancel</button>`;
   } else if (act === 'theme') {
     safeSet('theme', el.dataset.v);
     restyle();
